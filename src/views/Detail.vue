@@ -1,46 +1,29 @@
 <template>
   <div class="detail">
-    <h1>科普详情页</h1>
+    <h1>科普详情页 - 降气平哮方</h1>
     <div ref="chartContainer" class="chart-container"></div>
   </div>
 </template>
 
 <script>
 import * as echarts from 'echarts'
-import axios from 'axios'
 
 export default {
   name: 'Detail',
   data() {
     return {
-      chart: null,
-      prescriptionData: null
+      chart: null
     }
   },
   mounted() {
     this.initChart()
-    this.fetchPrescriptionData()
   },
   methods: {
     initChart() {
       this.chart = echarts.init(this.$refs.chartContainer)
-    },
-    async fetchPrescriptionData() {
-      try {
-        const response = await axios.get('http://localhost:8000/api/prescriptions/小青龙汤')
-        this.prescriptionData = response.data
-        this.updateChart()
-      } catch (error) {
-        console.error('获取数据失败:', error)
-      }
-    },
-    updateChart() {
-      if (!this.prescriptionData) return
-
-      const radarData = this.prescriptionData.radar_data
       const option = {
         title: {
-          text: `${this.prescriptionData.prescription_name} - 疗效指标`
+          text: '降气平哮方 - 疗效指标'
         },
         tooltip: {
           trigger: 'item'
@@ -57,13 +40,7 @@ export default {
         series: [{
           type: 'radar',
           data: [{
-            value: [
-              radarData.anti_inflammatory,
-              radarData.anti_asthmatic,
-              radarData.immune_regulation,
-              radarData.anti_allergic,
-              radarData.phlegm_resolving
-            ],
+            value: [85, 90, 75, 80, 88],
             name: '疗效指标',
             areaStyle: {
               color: 'rgba(64, 158, 255, 0.3)'

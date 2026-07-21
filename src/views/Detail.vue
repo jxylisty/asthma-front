@@ -18,7 +18,10 @@
       <div class="module-a card">
         <div class="card-header">
           <h2>方剂全景特征</h2>
-          <el-tag type="success" effect="dark">南京中医药大学附属医院 经验方</el-tag>
+          <div class="header-actions">
+            <el-tag type="success" effect="dark">南京中医药大学附属医院 经验方</el-tag>
+            <el-button class="speech-btn" icon="Mic" circle size="small" @click="speakHerbs" />
+          </div>
         </div>
         <div class="prescription-info">
           <h1 class="prescription-name">降气平哮方</h1>
@@ -55,7 +58,10 @@
       <div class="module-b card">
         <div class="card-header">
           <h2>成分入血预测战力面板</h2>
-          <el-tag type="info" effect="plain">PU 学习算法预测结果</el-tag>
+          <div class="header-actions">
+            <el-tag type="info" effect="plain">PU 学习算法预测结果</el-tag>
+            <el-button class="speech-btn" icon="Mic" circle size="small" @click="speakCompounds" />
+          </div>
         </div>
         <div class="compound-list">
           <div
@@ -86,14 +92,17 @@
       <div class="module-c card">
         <div class="card-header">
           <h2>干预效能雷达图</h2>
-          <el-tooltip placement="top" effect="light">
-            <template #content>
-              <div class="radar-tip">
-                注：本指数基于网络药理学 KEGG 通路富集分析映射算法得出
-              </div>
-            </template>
-            <el-icon class="info-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
+          <div class="header-actions">
+            <el-tooltip placement="top" effect="light">
+              <template #content>
+                <div class="radar-tip">
+                  注：本指数基于网络药理学 KEGG 通路富集分析映射算法得出
+                </div>
+              </template>
+              <el-icon class="info-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+            <el-button class="speech-btn" icon="Mic" circle size="small" @click="speakRadar" />
+          </div>
         </div>
         <div ref="radarChart" class="radar-chart"></div>
       </div>
@@ -105,7 +114,34 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { HomeFilled, Setting, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { HomeFilled, Setting, InfoFilled, QuestionFilled, Mic } from '@element-plus/icons-vue'
+import { useSpeech } from '../composables/useSpeech'
+import { useSettings } from '../composables/useSettings'
+
+const { speak, stop, isSpeaking } = useSpeech()
+const { speechVoice, speechRate, speechPitch, speechEnabled } = useSettings()
+
+function speakHerbs() {
+  if (!speechEnabled.value) return
+  const text = `降气平哮方。证型：发作期外寒内热证。药材组成：${herbs.map(h => h.name).join('、')}。${herbs.map(h => `${h.name}：${h.description}`).join('。')}`
+  speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+}
+
+function speakCompounds() {
+  if (!speechEnabled.value) return
+  const text = `成分入血预测战力面板。${compounds.map((c, i) => `第${i + 1}位，${c.name}，预测概率${c.probability}%，${c.description}`).join('。')}`
+  speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+}
+
+function speakRadar() {
+  if (!speechEnabled.value) return
+  const text = `干预效能雷达图。${radarData.map(d => `${d.name}：${d.value}分`).join('。')}`
+  speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+}
+
+function stopSpeech() {
+  stop()
+}
 
 const router = useRouter()
 const radarChart = ref(null)
@@ -234,7 +270,7 @@ onMounted(() => {
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #f5f7fa 0%, #e4e9f2 100%);
+  background: var(--bg-gradient);
 }
 
 /* 顶部导航栏 */
@@ -293,8 +329,24 @@ onMounted(() => {
 .card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speech-btn {
+  color: #909399;
+  transition: all 0.3s ease;
+}
+
+.speech-btn:hover {
+  color: #409eff;
 }
 
 .card-header h2 {

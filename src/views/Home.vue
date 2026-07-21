@@ -150,8 +150,9 @@ function initParticles() {
   if (!canvas) return
 
   ctx = canvas.getContext('2d')
-  canvas.width = window.innerWidth
-  canvas.height = window.innerHeight
+  const container = canvas.parentElement
+  canvas.width = container.clientWidth
+  canvas.height = container.clientHeight
 
   const particleCount = 80
   particles = []
@@ -307,8 +308,8 @@ onUnmounted(() => {
 <style scoped>
 .home-container {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   overflow: hidden;
 }

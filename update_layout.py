@@ -1,0 +1,1 @@
+packets("create", 'special/components/Layout.func', 'write", encoding='utf-8');file.create();input=folders.post("{\n")/view/function.options = {}?front time: time.getTime()+passbacket.indefinite.filler: website();output.post("doorent");

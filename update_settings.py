@@ -1,0 +1,27 @@
+with open('src/views/Settings.vue', 'r', encoding='utf-8') as f:
+    content = f.read()
+
+content = content.replace(
+    'import { ref, watch } from \'vue\'\nimport { ElMessage } from \'element-plus\'',
+    'import { ElMessage } from \'element-plus\'\nimport { useSettings } from \'../composables/useSettings\''
+)
+
+content = content.replace(
+    'const bgColors = [\n  { label: \'深蓝科技\', value: \'dark-blue\', gradient: \'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)\' },\n  { label: \'清新绿\', value: \'fresh-green\', gradient: \'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)\' },\n  { label: \'温暖橙\', value: \'warm-orange\', gradient: \'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)\' },\n  { label: \'优雅紫\', value: \'elegant-purple\', gradient: \'linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)\' },\n  { label: \'简约白\', value: \'simple-white\', gradient: \'linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%)\' },\n  { label: \'暗夜黑\', value: \'midnight-black\', gradient: \'linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 50%, #16213e 100%)\' }\n]\n\nconst bgColor = ref(\'dark-blue\')\nconst fontFamily = ref(\'default\')\nconst fontSize = ref(\'default\')\n\nconst autoRefresh = ref(false)\nconst refreshInterval = ref(60)\nconst cacheData = ref(true)\nconst probabilityThreshold = ref(70)\n\nconst systemNotification = ref(true)\nconst analysisCompleteNotification = ref(true)\nconst dataUpdateNotification = ref(true)\n\nconst fontFamilyMap = {\n  default: \'-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif\',\n  microsoft: \'\"Microsoft YaHei\", \"微软雅黑\", sans-serif\',\n  pingfang: \'\"PingFang SC\", \"苹方\", sans-serif\',\n  songti: \'\"SimSun\", \"宋体\", serif\',\n  kaiti: \'\"KaiTi\", \"楷体\", serif\',\n  arial: \'\"Arial\", \"Helvetica Neue\", Helvetica, sans-serif\'\n}\n\nconst fontSizeMap = {\n  small: \'12px\',\n  default: \'14px\',\n  medium: \'16px\',\n  large: \'18px\',\n  xlarge: \'20px\'\n}\n\nfunction applySettings() {\n  const root = document.documentElement\n  const selectedColor = bgColors.find(c => c.value === bgColor.value)\n  \n  if (selectedColor) {\n    root.style.setProperty(\'--bg-gradient\', selectedColor.gradient)\n  }\n  \n  root.style.setProperty(\'--font-family\', fontFamilyMap[fontFamily.value])\n  root.style.setProperty(\'--font-size-base\', fontSizeMap[fontSize.value])\n}\n\nfunction saveSettings() {\n  const settings = {\n    bgColor: bgColor.value,\n    fontFamily: fontFamily.value,\n    fontSize: fontSize.value,\n    autoRefresh: autoRefresh.value,\n    refreshInterval: refreshInterval.value,\n    cacheData: cacheData.value,\n    probabilityThreshold: probabilityThreshold.value,\n    systemNotification: systemNotification.value,\n    analysisCompleteNotification: analysisCompleteNotification.value,\n    dataUpdateNotification: dataUpdateNotification.value\n  }\n  \n  localStorage.setItem(\'asthma-settings\', JSON.stringify(settings))\n}\n\nwatch([bgColor, fontFamily, fontSize, autoRefresh, refreshInterval, cacheData, probabilityThreshold, systemNotification, analysisCompleteNotification, dataUpdateNotification], () => {\n  applySettings()\n  saveSettings()\n}, { deep: true })\n\nfunction resetSettings() {\n  bgColor.value = \'dark-blue\'\n  fontFamily.value = \'default\'\n  fontSize.value = \'default\'\n  autoRefresh.value = false\n  refreshInterval.value = 60\n  cacheData.value = true\n  probabilityThreshold.value = 70\n  systemNotification.value = true\n  analysisCompleteNotification.value = true\n  dataUpdateNotification.value = true\n  \n  localStorage.removeItem(\'asthma-settings\')\n  ElMessage.info(\'已重置为默认设置\')\n}\n\nfunction loadSettings() {\n  const saved = localStorage.getItem(\'asthma-settings\')\n  if (saved) {\n    try {\n      const settings = JSON.parse(saved)\n      bgColor.value = settings.bgColor || \'dark-blue\'\n      fontFamily.value = settings.fontFamily || \'default\'\n      fontSize.value = settings.fontSize || \'default\'\n      autoRefresh.value = settings.autoRefresh || false\n      refreshInterval.value = settings.refreshInterval || 60\n      cacheData.value = settings.cacheData !== false\n      probabilityThreshold.value = settings.probabilityThreshold || 70\n      systemNotification.value = settings.systemNotification !== false\n      analysisCompleteNotification.value = settings.analysisCompleteNotification !== false\n      dataUpdateNotification.value = settings.dataUpdateNotification !== false\n    } catch (e) {\n      console.error(\'Failed to load settings:\', e)\n    }\n  }\n  \n  applySettings()\n}\n\nloadSettings()',
+    'const {\\n  bgColor,\\n  fontFamily,\\n  fontSize,\\n  autoRefresh,\\n  refreshInterval,\\n  cacheData,\\n  probabilityThreshold,\\n  systemNotification,\\n  analysisCompleteNotification,\\n  dataUpdateNotification,\\n  bgColors,\\n  resetSettings\\n} = useSettings()\\n\\nfunction handleReset() {\\n  resetSettings()\\n  ElMessage.info(\\'已重置为默认设置\\')\\n}'
+)
+
+content = content.replace(
+    '@click="resetSettings"',
+    '@click="handleReset"'
+)
+
+content = content.replace(
+    '设置将自动保存',
+    '设置将自动保存到本地'
+)
+
+with open('src/views/Settings.vue', 'w', encoding='utf-8') as f:
+    f.write(content)
+
+print('Settings.vue updated successfully')

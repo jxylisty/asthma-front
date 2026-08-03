@@ -18,12 +18,18 @@
       <div class="module-a card">
         <div class="card-header">
           <h2>方剂全景特征</h2>
-          <el-tag type="success" effect="dark">南京中医药大学附属医院 经验方</el-tag>
+          <div class="header-actions">
+            <el-tag type="success" effect="dark">南京中医药大学附属医院 经验方</el-tag>
+            <el-button class="speech-btn" :class="{ speaking: isSpeakingHerbs }" size="small" @click="toggleSpeakHerbs">
+              <el-icon><VideoPause v-if="isSpeakingHerbs" /><Mic v-else /></el-icon>
+              {{ isSpeakingHerbs ? '停止' : '播报' }}
+            </el-button>
+          </div>
         </div>
         <div class="prescription-info">
-          <h1 class="prescription-name">降气平哮方</h1>
+          <h1 class="prescription-name">{{ prescriptionInfo?.name || '加载中...' }}</h1>
           <div class="syndrome-tag">
-            <el-tag type="warning" effect="plain">证型：发作期外寒内热证</el-tag>
+            <el-tag v-if="prescriptionInfo?.indication_type" type="warning" effect="plain">证型：{{ prescriptionInfo.indication_type }}</el-tag>
           </div>
         </div>
         <div class="herb-section">
@@ -55,7 +61,13 @@
       <div class="module-b card">
         <div class="card-header">
           <h2>成分入血预测战力面板</h2>
-          <el-tag type="info" effect="plain">PU 学习算法预测结果</el-tag>
+          <div class="header-actions">
+            <el-tag type="info" effect="plain">PU 学习算法预测结果</el-tag>
+            <el-button class="speech-btn" :class="{ speaking: isSpeakingCompounds }" size="small" @click="toggleSpeakCompounds">
+              <el-icon><VideoPause v-if="isSpeakingCompounds" /><Mic v-else /></el-icon>
+              {{ isSpeakingCompounds ? '停止' : '播报' }}
+            </el-button>
+          </div>
         </div>
         <div class="compound-list">
           <div
@@ -86,14 +98,20 @@
       <div class="module-c card">
         <div class="card-header">
           <h2>干预效能雷达图</h2>
-          <el-tooltip placement="top" effect="light">
-            <template #content>
-              <div class="radar-tip">
-                注：本指数基于网络药理学 KEGG 通路富集分析映射算法得出
-              </div>
-            </template>
-            <el-icon class="info-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
+          <div class="header-actions">
+            <el-tooltip placement="top" effect="light">
+              <template #content>
+                <div class="radar-tip">
+                  注：本指数基于网络药理学 KEGG 通路富集分析映射算法得出
+                </div>
+              </template>
+              <el-icon class="info-icon"><QuestionFilled /></el-icon>
+            </el-tooltip>
+            <el-button class="speech-btn" :class="{ speaking: isSpeakingRadar }" size="small" @click="toggleSpeakRadar">
+              <el-icon><VideoPause v-if="isSpeakingRadar" /><Mic v-else /></el-icon>
+              {{ isSpeakingRadar ? '停止' : '播报' }}
+            </el-button>
+          </div>
         </div>
         <div ref="radarChart" class="radar-chart"></div>
       </div>
@@ -102,78 +120,161 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
-import { HomeFilled, Setting, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { HomeFilled, Setting, InfoFilled, QuestionFilled, Mic, VideoPause } from '@element-plus/icons-vue'
+import { useSpeech } from '../composables/useSpeech'
+import { useSettings } from '../composables/useSettings'
+import { getPrescriptionDetail, getPrescriptionRadar, getPrescriptionCompounds } from '../api'
+
+const { speak, stop } = useSpeech()
+const { speechVoice, speechRate, speechPitch, speechEnabled } = useSettings()
 
 const router = useRouter()
+const route = useRoute()
 const radarChart = ref(null)
 
-// 药材数据
-const herbs = [
-  { name: '麻黄', description: '宣肺平喘，利水消肿。为方中君药，主要含麻黄碱、伪麻黄碱等活性成分。' },
-  { name: '黄芩', description: '清热燥湿，泻火解毒。主要含黄芩苷、黄芩素等黄酮类化合物。' },
-  { name: '葶苈子', description: '泻肺平喘，利水消肿。含芥子苷、脂肪油等成分。' },
-  { name: '地龙', description: '清热定惊，通络平喘。含次黄嘌呤、地龙蛋白等活性物质。' },
-  { name: '杏仁', description: '止咳平喘，润肠通便。含苦杏仁苷、脂肪油等成分。' },
-  { name: '半夏', description: '燥湿化痰，降逆止呕。含半夏蛋白、挥发油等。' },
-  { name: '陈皮', description: '理气健脾，燥湿化痰。含橙皮苷、挥发油等。' },
-  { name: '甘草', description: '补脾益气，清热解毒，调和诸药。含甘草酸、甘草苷等。' }
-]
+// 响应式数据
+const prescriptionInfo = ref(null)
+const herbs = ref([])
+const compounds = ref([])
+const radarData = ref([])
 
-// 化合物成分数据
-const compounds = [
-  {
-    name: '麻黄碱 (Ephedrine)',
-    probability: 98.2,
-    description: '方中麻黄核心成分，强效舒张气道平滑肌、平喘'
-  },
-  {
-    name: '黄芩苷 (Baicalin)',
-    probability: 94.5,
-    description: '方中黄芩核心成分，高效抑制肺部过敏性炎症反应'
-  },
-  {
-    name: '苦杏仁苷 (Amygdalin)',
-    probability: 89.1,
-    description: '止咳平喘核心成分'
-  },
-  {
-    name: '次黄嘌呤 (Hypoxanthine)',
-    probability: 85.6,
-    description: '来源于地龙，解痉、扩张支气管'
-  },
-  {
-    name: '槲皮素 (Quercetin)',
-    probability: 81.3,
-    description: '广泛存在于多味药材，抗炎与免疫调节作用'
+const isSpeakingHerbs = ref(false)
+const isSpeakingCompounds = ref(false)
+const isSpeakingRadar = ref(false)
+
+// 从路由获取方剂ID
+const prescriptionId = computed(() => {
+  const id = route.query.id
+  return id ? Number(id) : null
+})
+
+// 加载方剂详情数据
+async function loadDetail() {
+  let id = prescriptionId.value
+
+  // 如果没有ID参数，尝试通过关键词搜索
+  if (!id && route.query.keyword) {
+    try {
+      const { search } = await import('../api')
+      const results = await search(route.query.keyword)
+      if (results && results.length > 0) {
+        id = results[0].id
+      }
+    } catch (e) {
+      console.error('搜索方剂失败:', e)
+    }
   }
-]
 
-// 雷达图数据
-const radarData = [
-  { name: '抗炎指数', value: 88 },
-  { name: '平喘指数', value: 92 },
-  { name: '免疫调节指数', value: 75 },
-  { name: '气道修复指数', value: 60 }
-]
+  if (!id) return
+
+  try {
+    // 并行请求三个接口
+    const [detail, radar, compoundResult] = await Promise.all([
+      getPrescriptionDetail(id),
+      getPrescriptionRadar(id),
+      getPrescriptionCompounds(id, 0.5)
+    ])
+
+    // 处理方剂详情
+    prescriptionInfo.value = detail
+    herbs.value = (detail.herbs || []).map(h => ({
+      name: h.name,
+      description: h.info_desc || ''
+    }))
+
+    // 处理雷达数据：归一化到 0-100
+    const radarRaw = radar || []
+    const maxCount = Math.max(...radarRaw.map(r => r.count), 1)
+    radarData.value = radarRaw.map(r => ({
+      name: r.efficacy_type,
+      value: Math.round((r.count / maxCount) * 100)
+    }))
+
+    // 处理化合物数据
+    const compoundItems = (compoundResult && compoundResult.items) ? compoundResult.items : []
+    compounds.value = compoundItems.map(c => ({
+      name: `${c.name} (来源: ${c.herb_name || '未知'})`,
+      probability: c.blood_prob ? Math.round(c.blood_prob * 100 * 10) / 10 : 0,
+      description: `ccTCM概率: ${c.prob_cctcm ? (c.prob_cctcm * 100).toFixed(1) + '%' : '无'} | HERB概率: ${c.prob_herb ? (c.prob_herb * 100).toFixed(1) + '%' : '无'}`
+    }))
+
+    // 数据加载完毕后初始化雷达图
+    initRadarChart()
+  } catch (e) {
+    console.error('加载方剂详情失败:', e)
+  }
+}
+
+function toggleSpeakHerbs() {
+  if (!speechEnabled.value) return
+
+  if (isSpeakingHerbs.value) {
+    stop()
+    isSpeakingHerbs.value = false
+  } else {
+    stopOtherSpeaking()
+    const indication = prescriptionInfo.value?.indication_type || '未知'
+    const text = `${prescriptionInfo.value?.name || '方剂'}。证型：${indication}。药材组成：${herbs.value.map(h => h.name).join('、')}。${herbs.value.map(h => `${h.name}：${h.description}`).join('。')}`
+    speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+    isSpeakingHerbs.value = true
+  }
+}
+
+function toggleSpeakCompounds() {
+  if (!speechEnabled.value) return
+
+  if (isSpeakingCompounds.value) {
+    stop()
+    isSpeakingCompounds.value = false
+  } else {
+    stopOtherSpeaking()
+    const text = `成分入血预测战力面板。${compounds.value.map((c, i) => `第${i + 1}位，${c.name}，预测概率${c.probability}%，${c.description}`).join('。')}`
+    speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+    isSpeakingCompounds.value = true
+  }
+}
+
+function toggleSpeakRadar() {
+  if (!speechEnabled.value) return
+
+  if (isSpeakingRadar.value) {
+    stop()
+    isSpeakingRadar.value = false
+  } else {
+    stopOtherSpeaking()
+    const text = `干预效能雷达图。${radarData.value.map(d => `${d.name}：${d.value}分`).join('。')}`
+    speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
+    isSpeakingRadar.value = true
+  }
+}
+
+function stopOtherSpeaking() {
+  stop()
+  isSpeakingHerbs.value = false
+  isSpeakingCompounds.value = false
+  isSpeakingRadar.value = false
+}
 
 // 获取进度条颜色
 function getProgressColor(percentage) {
-  if (percentage >= 90) return '#f56c6c' // 红色
-  if (percentage >= 80) return '#e6a23c' // 橙色
-  return '#409eff' // 蓝色
+  if (percentage >= 90) return '#f56c6c'
+  if (percentage >= 80) return '#e6a23c'
+  return '#409eff'
 }
 
 // 初始化雷达图
 function initRadarChart() {
+  if (!radarChart.value || radarData.value.length === 0) return
+
   const chart = echarts.init(radarChart.value)
 
   const option = {
     color: ['#409eff'],
     radar: {
-      indicator: radarData.map(item => ({
+      indicator: radarData.value.map(item => ({
         name: item.name,
         max: 100
       })),
@@ -202,7 +303,7 @@ function initRadarChart() {
     series: [{
       type: 'radar',
       data: [{
-        value: radarData.map(item => item.value),
+        value: radarData.value.map(item => item.value),
         name: '干预效能',
         symbol: 'circle',
         symbolSize: 8,
@@ -227,14 +328,14 @@ function initRadarChart() {
 }
 
 onMounted(() => {
-  initRadarChart()
+  loadDetail()
 })
 </script>
 
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #f5f7fa 0%, #e4e9f2 100%);
+  background: var(--bg-gradient);
 }
 
 /* 顶部导航栏 */
@@ -293,8 +394,34 @@ onMounted(() => {
 .card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speech-btn {
+  color: #909399;
+  transition: all 0.3s ease;
+}
+
+.speech-btn:hover {
+  color: #409eff;
+}
+
+.speech-btn.speaking {
+  color: #67c23a;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
 .card-header h2 {

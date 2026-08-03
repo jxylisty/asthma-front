@@ -94,6 +94,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Microphone } from '@element-plus/icons-vue'
+import { getStatistics, search } from '../api'
 
 const router = useRouter()
 
@@ -150,8 +151,9 @@ function initParticles() {
   if (!canvas) return
 
   ctx = canvas.getContext('2d')
-  canvas.width = window.innerWidth
-  canvas.height = window.innerHeight
+  const container = canvas.parentElement
+  canvas.width = container.clientWidth
+  canvas.height = container.clientHeight
 
   const particleCount = 80
   particles = []
@@ -261,6 +263,12 @@ async function handleSearch() {
   loadingVisible.value = true
   progressWidth.value = 0
 
+  // 并行：调用搜索 API + 播放加载动画
+  let searchResult = null
+  const searchPromise = search(searchQuery.value)
+    .then(res => { searchResult = res })
+    .catch(e => { console.error('Search failed:', e) })
+
   // 动态变换计算日志
   for (let i = 0; i < loadingSteps.length; i++) {
     loadingText.value = loadingSteps[i]
@@ -268,13 +276,22 @@ async function handleSearch() {
     await new Promise(resolve => setTimeout(resolve, 400))
   }
 
+  await searchPromise
   loadingVisible.value = false
 
-  // 跳转到详情页
-  router.push({
-    path: '/detail',
-    query: { keyword: searchQuery.value || '降气平哮方' }
-  })
+  // 命中方剂则跳转详情页，否则按关键词检索
+  const prescriptions = searchResult?.prescriptions || []
+  if (prescriptions.length > 0) {
+    router.push({
+      path: '/detail',
+      query: { id: prescriptions[0].id }
+    })
+  } else {
+    router.push({
+      path: '/detail',
+      query: { keyword: searchQuery.value }
+    })
+  }
 }
 
 // 监听输入变化
@@ -283,9 +300,21 @@ function handleInputFocus() {
 }
 
 // 生命周期
-onMounted(() => {
+onMounted(async () => {
   initParticles()
   drawParticles()
+
+  // 尝试加载真实统计数据，失败则沿用默认值
+  try {
+    const stats = await getStatistics()
+    if (stats) {
+      if (stats.prescription_count != null) tickerData.value[0].value = stats.prescription_count
+      if (stats.compound_count != null) tickerData.value[1].value = stats.compound_count
+      if (stats.target_count != null) tickerData.value[2].value = stats.target_count
+    }
+  } catch (e) {
+    console.error('Failed to load statistics:', e)
+  }
 
   // 启动数字跳动动画
   tickerData.value.forEach((item, index) => {
@@ -307,8 +336,8 @@ onUnmounted(() => {
 <style scoped>
 .home-container {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   overflow: hidden;
 }

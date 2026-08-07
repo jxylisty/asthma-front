@@ -94,6 +94,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Microphone } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { getStatistics, search } from '../api'
 
 const router = useRouter()
@@ -251,9 +252,7 @@ function selectSuggestion(item) {
 
 // 语音点击
 function handleVoice() {
-  // Mock 语音识别
-  alert('语音识别功能演示 - 已模拟识别: "降气平哮方"')
-  searchQuery.value = '降气平哮方'
+  ElMessage.info('语音识别功能暂未启用，请手动输入搜索关键词')
 }
 
 // 搜索处理
@@ -279,7 +278,7 @@ async function handleSearch() {
   await searchPromise
   loadingVisible.value = false
 
-  // 命中方剂则跳转详情页，否则按关键词检索
+  // 命中方剂则跳转详情页
   const prescriptions = searchResult?.prescriptions || []
   if (prescriptions.length > 0) {
     router.push({
@@ -287,10 +286,7 @@ async function handleSearch() {
       query: { id: prescriptions[0].id }
     })
   } else {
-    router.push({
-      path: '/detail',
-      query: { keyword: searchQuery.value }
-    })
+    ElMessage.warning('未找到匹配的方剂，请尝试其他关键词')
   }
 }
 

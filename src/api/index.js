@@ -30,18 +30,22 @@ export const getPrescriptionRadar = (id) => api.get(`/prescriptions/${id}/radar`
 export const getPrescriptionCompounds = (id, minProb = 0.5) => api.get(`/prescriptions/${id}/compounds`, { params: { min_prob: minProb } })
 
 // ===== 药材 =====
-export const getHerbs = (page = 1, pageSize = 20) => api.get('/herbs', { params: { page, page_size: pageSize } })
+export const getHerbs = (page = 1, pageSize = 20, keyword = '') => api.get('/herbs', { params: { page, page_size: pageSize, keyword } })
 export const getHerbDetail = (id) => api.get(`/herbs/${id}`)
 export const getHerbCompounds = (id) => api.get(`/herbs/${id}/compounds`)
 
 // ===== 化合物 =====
 export const getCompounds = (page = 1, pageSize = 20, keyword = '', minProb = 0) => api.get('/compounds', { params: { page, page_size: pageSize, keyword, min_prob: minProb } })
-export const getCompoundDetail = (cid) => api.get(`/compounds/${cid}`)
+export const getCompoundDetail = (id) => api.get(`/compounds/${id}`)
 export const getHighPotentialCompounds = (page = 1, pageSize = 20) => api.get('/compounds/high-potential', { params: { page, page_size: pageSize } })
-export const getCompoundTargets = (cid) => api.get(`/compounds/${cid}/targets`)
-export const getCompoundRadar = (cid) => api.get(`/compounds/${cid}/radar`)
+export const getCompoundTargets = (id) => api.get(`/compounds/${id}/targets`)
+export const getCompoundRadar = (id) => api.get(`/compounds/${id}/radar`)
 
 // ===== 预测 =====
 export const getPredictionModels = () => api.get('/prediction/models')
 export const predictCctcm = (data) => api.post('/prediction/predict/cctcm', data)
 export const predictHerb = (data) => api.post('/prediction/predict/herb', data)
+
+// ===== 专家模式 =====
+export const getExpertMetrics = () => api.get('/expert/metrics')
+export const getFeatureImportance = () => api.get('/expert/feature-importance')

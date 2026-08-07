@@ -227,31 +227,54 @@ async function loadHerb() {
     const herbName = route.query.name
 
     if (herbId) {
-      const detail = await getHerbDetail(herbId)
-      herb.value = {
-        name: detail.name || herbName,
-        alias: detail.alias || '',
-        pinyin: detail.pinyin || '',
-        latinName: detail.latin_name || '',
-        category: detail.category || '',
-        nature: detail.nature || '',
-        flavor: detail.flavor || '',
-        meridians: detail.meridians || '',
-        medicinalPart: detail.medicinal_part || '',
-        family: detail.family || '',
-        dosage: detail.dosage || '',
-        toxicity: detail.toxicity || '',
-        functions: detail.info_desc || '',
-        asthmaRelated: detail.asthma_related || false,
-        asthmaFunctions: detail.asthma_functions || '',
-        contraindication: detail.contraindication || '',
-        source: detail.source || '',
-        characteristics: detail.characteristics || '',
-        image: detail.image || '',
-        compounds: []
+      // 并行加载详情和化合物列表
+      const [detailRes, compoundsRes] = await Promise.allSettled([
+        getHerbDetail(herbId),
+        getHerbCompounds(herbId)
+      ])
+
+      if (detailRes.status === 'fulfilled' && detailRes.value) {
+        const detail = detailRes.value
+        herb.value = {
+          name: detail.name || herbName,
+          alias: detail.alias || '',
+          pinyin: detail.pinyin || '',
+          latinName: detail.latin_name || '',
+          category: detail.category || '',
+          nature: detail.nature || '',
+          flavor: detail.flavor || '',
+          meridians: detail.meridians || '',
+          medicinalPart: detail.medicinal_part || '',
+          family: detail.family || '',
+          dosage: detail.dosage || '',
+          toxicity: detail.toxicity || '',
+          functions: detail.functions || '',
+          asthmaRelated: detail.asthma_related || false,
+          asthmaFunctions: detail.asthma_functions || '',
+          contraindication: detail.contraindication || '',
+          source: detail.source || '',
+          characteristics: detail.characteristics || '',
+          image: detail.image || '',
+          compounds: []
+        }
       }
-      // Load compound details via API
-      await loadCompoundDetails(herbId)
+
+      // 化合物列表（可能失败）
+      if (compoundsRes.status === 'fulfilled' && compoundsRes.value) {
+        const compounds = compoundsRes.value
+        compoundDetails.value = (compounds || []).map(c => ({
+          name: c.name,
+          mw: c.mw,
+          logp: c.logp,
+          bloodEntryProbability: c.blood_entry_probability || 0,
+          id: c.id,
+          herbName: c.herb_name || ''
+        }))
+        if (herb.value) {
+          herb.value.compounds = compoundDetails.value.map(c => c.name)
+        }
+      }
+      loadingCompounds.value = false
     } else {
       // Fallback to local JSON
       const axios = (await import('axios')).default
@@ -280,8 +303,8 @@ async function loadCompoundDetails(herbId, compoundNames) {
       compoundDetails.value = (compounds || []).map(c => ({
         name: c.name,
         mw: null,
-        bloodEntryProbability: c.blood_prob || 0,
-        pubchemCid: c.pubchem_cid,
+        bloodEntryProbability: c.blood_entry_probability || 0,
+        id: c.id,
         herbName: c.herb_name || ''
       }))
       // Update herb.compounds list for the count display
@@ -324,7 +347,7 @@ function getProbabilityColor(prob) {
 function viewCompound(compound) {
   router.push({
     path: '/compounds/detail',
-    query: { name: compound.name, cid: compound.pubchemCid }
+    query: { name: compound.name, id: compound.id }
   })
 }
 

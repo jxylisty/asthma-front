@@ -38,86 +38,32 @@
             </el-autocomplete>
           </el-form-item>
 
-          <!-- 基础特征 -->
-          <div class="feature-section">
-            <div class="section-label">基础特征</div>
-            <el-form-item label="分子量 (MW)">
+          <!-- 动态特征列表 -->
+          <div class="feature-section" v-if="currentFeatures.length > 0">
+            <div class="section-label-row">
+              <span class="section-label">模型输入特征（{{ currentFeatures.length }} 项）</span>
+              <el-tag type="info" size="small" effect="dark" class="rdkit-tag">
+                {{ form.model === 'CCTCM' ? 'CCTCM 2.0' : 'HERB 2.0' }} 模型
+              </el-tag>
+            </div>
+            <el-form-item
+              v-for="f in currentFeatures"
+              :key="f.name"
+              :label="f.label + (f.unit ? ' (' + f.unit + ')' : '')"
+            >
               <el-input-number
-                v-model="form.mw"
-                :precision="2"
-                :step="1"
-                :min="0"
-                controls-position="right"
-                class="full-width"
-                :disabled="!form.manualMode"
-              />
-            </el-form-item>
-            <el-form-item label="LogP">
-              <el-input-number
-                v-model="form.logp"
+                v-model="form.features[f.name]"
                 :precision="2"
                 :step="0.1"
                 controls-position="right"
                 class="full-width"
-                :disabled="!form.manualMode"
               />
             </el-form-item>
           </div>
 
-          <!-- 高阶特征 -->
-          <div class="feature-section">
-            <div class="section-label-row">
-              <span class="section-label">高阶特征</span>
-              <el-tag v-if="form.model === 'CCTCM'" type="warning" size="small" effect="dark" class="rdkit-tag">
-                高阶特征已交由后台 RDKit 引擎自动化计算
-              </el-tag>
-            </div>
-            <el-form-item label="拓扑极性表面积 (TPSA)">
-              <el-input-number
-                v-model="form.tpsa"
-                :precision="2"
-                :step="1"
-                controls-position="right"
-                class="full-width"
-                :disabled="form.model === 'CCTCM'"
-              />
-            </el-form-item>
-            <el-form-item label="可旋转键数 (Rotatable Bonds)">
-              <el-input-number
-                v-model="form.rotatableBonds"
-                :min="0"
-                controls-position="right"
-                class="full-width"
-                :disabled="form.model === 'CCTCM'"
-              />
-            </el-form-item>
-            <el-form-item label="氢键供体数 (HBD)">
-              <el-input-number
-                v-model="form.hbd"
-                :min="0"
-                controls-position="right"
-                class="full-width"
-                :disabled="form.model === 'CCTCM'"
-              />
-            </el-form-item>
-            <el-form-item label="氢键受体数 (HBA)">
-              <el-input-number
-                v-model="form.hba"
-                :min="0"
-                controls-position="right"
-                class="full-width"
-                :disabled="form.model === 'CCTCM'"
-              />
-            </el-form-item>
-            <el-form-item label="芳香环数 (Aromatic Rings)">
-              <el-input-number
-                v-model="form.aromaticRings"
-                :min="0"
-                controls-position="right"
-                class="full-width"
-                :disabled="form.model === 'CCTCM'"
-              />
-            </el-form-item>
+          <!-- 特征说明 -->
+          <div class="feature-section" v-if="currentFeatures.length === 0">
+            <div class="section-label">正在加载模型特征...</div>
           </div>
 
           <!-- 执行按钮 -->
@@ -188,11 +134,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DataAnalysis, MagicStick } from '@element-plus/icons-vue'
 import cytoscape from 'cytoscape'
-import { getHighPotentialCompounds, getCompoundTargets, predictCctcm, predictHerb } from '../api'
+import { getHighPotentialCompounds, getCompoundTargets, getPredictionModels, predictCctcm, predictHerb } from '../api'
 
 const networkContainer = ref(null)
 let cyInstance = null
@@ -200,19 +146,38 @@ const predicting = ref(false)
 const predictionResult = ref(null)
 
 const compoundSummaries = ref([])
+const modelFeatures = ref({ cctcm: [], herb: [] })
 
 const form = reactive({
   model: 'HERB',
   compoundName: '',
-  mw: null,
-  logp: null,
-  tpsa: null,
-  rotatableBonds: null,
-  hbd: null,
-  hba: null,
-  aromaticRings: null,
+  features: {},
   manualMode: true
 })
+
+// 加载模型特征列表
+async function loadModelFeatures() {
+  try {
+    const data = await getPredictionModels()
+    const models = data || []
+    for (const m of models) {
+      const key = m.model_name.toLowerCase()
+      modelFeatures.value[key] = (m.features || []).map(f => ({
+        name: f.name,
+        label: f.label || f.name,
+        unit: f.unit || ''
+      }))
+    }
+  } catch (e) {
+    console.error('Failed to load model features:', e)
+  }
+}
+
+// 当前模型的特征列表
+const currentFeatures = ref([])
+watch(() => form.model, (val) => {
+  currentFeatures.value = modelFeatures.value[val.toLowerCase()] || []
+}, { immediate: true })
 
 async function loadCompoundSummaries() {
   try {
@@ -220,11 +185,11 @@ async function loadCompoundSummaries() {
     const items = res?.items || []
     compoundSummaries.value = items.map(c => ({
       name: c.name,
-      mw: null,
-      logp: null,
-      bloodEntryProbability: c.avg_prob,
-      asthmaRelated: false,
-      pubchem_cid: c.pubchem_cid
+      mw: c.mw,
+      logp: c.logp,
+      bloodEntryProbability: c.blood_entry_probability,
+      asthmaRelated: c.asthma_related || false,
+      id: c.id
     }))
   } catch (e) {
     console.error('Failed to load compound summaries:', e)
@@ -232,6 +197,7 @@ async function loadCompoundSummaries() {
 }
 
 loadCompoundSummaries()
+loadModelFeatures()
 
 function searchCompounds(queryString, callback) {
   if (!queryString) {
@@ -247,38 +213,19 @@ function searchCompounds(queryString, callback) {
 
 function handleCompoundSelect(item) {
   form.compoundName = item.name
-  form.mw = item.mw
-  form.logp = item.logp
   form.manualMode = false
 
-  // 模拟 RDKit 自动计算高阶特征
-  if (form.model === 'CCTCM') {
-    autoFillAdvancedFeatures(item)
-  } else {
-    // HERB 模式下也回填一些默认值
-    generateAdvancedFeatures(item)
+  // 根据当前模型的特征列表回填
+  const features = currentFeatures.value
+  for (const f of features) {
+    const name = f.name
+    // 映射化合物数据到模型特征
+    if (name === 'MolWt' && item.mw != null) form.features[name] = item.mw
+    else if (name === 'MolLogP' && item.logp != null) form.features[name] = item.logp
+    else if (name === 'LogP' && item.logp != null) form.features[name] = item.logp
   }
 
-  ElMessage.success(`已自动回填 ${item.name} 的特征数据`)
-}
-
-function autoFillAdvancedFeatures(item) {
-  // 模拟后台 RDKit 引擎计算
-  const seed = item.name.charCodeAt(0) + item.name.length
-  form.tpsa = Math.round((20 + (seed % 80)) * 100) / 100
-  form.rotatableBonds = seed % 8
-  form.hbd = seed % 5
-  form.hba = 2 + (seed % 6)
-  form.aromaticRings = seed % 4
-}
-
-function generateAdvancedFeatures(item) {
-  const seed = (item.mw || 200) + (item.logp || 2)
-  form.tpsa = Math.round((30 + (seed % 70)) * 100) / 100
-  form.rotatableBonds = Math.round(seed) % 8
-  form.hbd = Math.round(seed) % 5
-  form.hba = 2 + (Math.round(seed) % 6)
-  form.aromaticRings = Math.round(seed) % 4
+  ElMessage.success(`已自动回填 ${item.name} 的基础特征，请补充其余特征`)
 }
 
 function getProbabilityColor(prob) {
@@ -288,22 +235,13 @@ function getProbabilityColor(prob) {
 }
 
 function buildPredictPayload() {
-  // 按后端各模型特征列构建 features 字典，未提供的特征由后端 imputer 用训练集中位数填补
-  const features = form.model === 'CCTCM'
-    ? {
-        'LogP': form.logp,
-        'TPSA': form.tpsa,
-        'Num. Rotatable bonds': form.rotatableBonds,
-        'Num. H-bond acceptors': form.hba,
-        'Num. H-bond donors': form.hbd
-      }
-    : {
-        'MolWt': form.mw,
-        'MolLogP': form.logp,
-        'NumHAcceptors': form.hba,
-        'NumHDonors': form.hbd,
-        'NumRotatableBonds': form.rotatableBonds
-      }
+  // 基于当前模型的特征列表构建，用户填写的值传入，未填写的由后端 imputer 填补
+  const features = {}
+  for (const f of currentFeatures.value) {
+    if (form.features[f.name] != null && form.features[f.name] !== '') {
+      features[f.name] = Number(form.features[f.name])
+    }
+  }
   return {
     compound_name: form.compoundName,
     features
@@ -322,7 +260,7 @@ async function runPrediction() {
   try {
     const compoundData = compoundSummaries.value.find(c => c.name === form.compoundName)
 
-    // 调用预测 API，失败则回退到模拟预测
+    // 调用预测 API
     let probability
     try {
       const payload = buildPredictPayload()
@@ -331,25 +269,20 @@ async function runPrediction() {
         : await predictHerb(payload)
       probability = res.probability
     } catch (e) {
-      console.error('Prediction API failed, fallback to mock:', e)
-      if (compoundData && compoundData.bloodEntryProbability != null) {
-        probability = compoundData.bloodEntryProbability
-      } else {
-        probability = Math.random() * 0.6 + 0.2
-      }
-      if (form.model === 'CCTCM') {
-        probability = Math.min(0.99, probability + Math.random() * 0.1)
-      }
+      console.error('Prediction API failed:', e)
+      ElMessage.error('预测接口请求失败，请检查后端服务是否正常')
+      return
     }
 
     // 加载靶点：命中化合物则请求靶点 API，否则由 renderNetwork 生成模拟靶点
     let targets = []
-    if (compoundData && compoundData.pubchem_cid) {
+    if (compoundData && compoundData.id) {
       try {
-        const targetList = await getCompoundTargets(compoundData.pubchem_cid)
+        const targetList = await getCompoundTargets(compoundData.id)
         targets = (targetList || []).map(t => ({
-          gene: t.gene_symbol,
-          sourceDB: t.efficacy_type || ''
+          gene: t.gene,
+          sourceDB: t.source_db || t.target_type || '',
+          networkCentrality: t.network_centrality || 0
         }))
       } catch (e) {
         console.error('Failed to load compound targets:', e)
@@ -401,7 +334,7 @@ function renderNetwork(compoundName, targets, probability) {
   for (let i = 0; i < maxTargets; i++) {
     const t = targets[i]
     const targetId = `target_${i}`
-    const activity = t.networkCentrality || Math.random()
+    const activity = t.networkCentrality || 0
 
     elements.nodes.push({
       data: {
@@ -423,30 +356,7 @@ function renderNetwork(compoundName, targets, probability) {
     })
   }
 
-  // 如果没有靶点数据，生成模拟靶点
-  if (maxTargets === 0) {
-    const mockTargets = ['TNF', 'IL-4', 'IL-13', 'STAT1', 'NF-κB', 'IL-6', 'EGFR', 'MAPK']
-    mockTargets.forEach((name, i) => {
-      const targetId = `target_${i}`
-      const activity = Math.random()
-      elements.nodes.push({
-        data: {
-          id: targetId,
-          label: name,
-          category: 'target',
-          activity: activity
-        }
-      })
-      elements.edges.push({
-        data: {
-          id: `edge_${i}`,
-          source: 'compound',
-          target: targetId,
-          activity: activity
-        }
-      })
-    })
-  }
+  // 无靶点数据时不生成模拟靶点，仅展示化合物节点
 
   cyInstance = cytoscape({
     container: networkContainer.value,

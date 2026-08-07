@@ -17,20 +17,12 @@
         </template>
       </el-input>
 
-      <el-select
-        v-model="categoryFilter"
-        placeholder="按类别筛选"
-        class="category-select"
-      >
-        <el-option label="全部" value="" />
-        <el-option label="经典方剂" value="classic" />
-        <el-option label="现代组方" value="modern" />
-      </el-select>
+
     </div>
 
     <div class="prescription-grid">
       <el-card
-        v-for="item in paginatedPrescriptions"
+        v-for="item in filteredPrescriptions"
         :key="item.name"
         class="prescription-card"
         @click="handleCardClick(item)"
@@ -38,8 +30,8 @@
         <div class="card-header">
           <h3 class="card-title">{{ item.name }}</h3>
           <div class="header-right">
-            <el-tag :type="item.category === 'classic' ? 'primary' : 'success'" size="small">
-              {{ item.category === 'classic' ? '经典方剂' : '现代组方' }}
+            <el-tag v-if="item.indicationType" type="warning" size="small">
+              {{ item.indicationType }}
             </el-tag>
             <el-button
               class="speech-btn"
@@ -55,23 +47,18 @@
 
         <div class="card-body">
           <div class="origin-info">
-            <span class="label">出处：</span>
-            <span class="value">{{ item.origin }}</span>
-          </div>
-
-          <div class="herbs-info">
-            <span class="label">组成：</span>
-            <span class="value">{{ item.herbs }}</span>
+            <span class="label">证型：</span>
+            <span class="value">{{ item.indicationType || '—' }}</span>
           </div>
 
           <div class="effect-info">
             <span class="label">功效：</span>
-            <span class="value">{{ item.effect }}</span>
+            <span class="value">{{ item.effect || '—' }}</span>
           </div>
 
           <div class="compounds-info">
-            <span class="label">核心成分数：</span>
-            <span class="count-badge">{{ item.compoundCount }}</span>
+            <span class="label">药材数：</span>
+            <span class="count-badge">{{ item.herbCount }}</span>
           </div>
         </div>
 
@@ -84,7 +71,7 @@
       </el-card>
     </div>
 
-    <div class="pagination-wrapper" v-if="filteredPrescriptions.length > 10">
+    <div class="pagination-wrapper" v-if="totalPrescriptions > pageSize">
       <el-pagination
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -121,7 +108,7 @@ function toggleSpeech(item) {
     stop()
     speakingCards.value.delete(cardId)
   } else {
-    const text = `${item.name}。出处：${item.origin}。组成：${item.herbs}。功效：${item.effect}。`
+    const text = `${item.name}。证型：${item.indicationType || '未知'}。功效：${item.effect || '未知'}。药材数：${item.herbCount}。`
     speak(text, {
       voice: speechVoice.value,
       rate: speechRate.value,
@@ -134,7 +121,6 @@ function toggleSpeech(item) {
 const router = useRouter()
 
 const searchQuery = ref('')
-const categoryFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(6)
 
@@ -149,11 +135,9 @@ async function loadPrescriptions() {
     prescriptions.value = res.items.map(p => ({
       id: p.id,
       name: p.name,
-      origin: p.core_effect || '经典方剂',
-      herbs: '',
-      effect: p.core_effect || p.indication_type || '',
-      category: 'classic',
-      compoundCount: 0
+      indicationType: p.indication_type || '',
+      effect: p.core_effect || '',
+      herbCount: p.herb_count || 0
     }))
     totalPrescriptions.value = res.total
   } finally {
@@ -172,22 +156,12 @@ const filteredPrescriptions = computed(() => {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(item =>
       item.name.toLowerCase().includes(query) ||
-      item.herbs.toLowerCase().includes(query) ||
-      item.origin.toLowerCase().includes(query)
+      item.effect.toLowerCase().includes(query) ||
+      item.indicationType.toLowerCase().includes(query)
     )
   }
 
-  if (categoryFilter.value) {
-    result = result.filter(item => item.category === categoryFilter.value)
-  }
-
   return result
-})
-
-const paginatedPrescriptions = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredPrescriptions.value.slice(start, end)
 })
 
 function handleCardClick(item) {

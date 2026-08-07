@@ -94,36 +94,44 @@
           style="width: 100%"
           @sort-change="handleSortChange"
         >
-          <el-table-column prop="gene" label="靶点基因" min-width="200" sortable="custom">
+          <el-table-column prop="gene" label="靶点基因" min-width="140" sortable="custom">
             <template #default="{ row }">
               <span class="target-gene">{{ row.gene }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="sourceDB" label="来源数据库" width="140" align="center" sortable="custom">
+          <el-table-column prop="targetType" label="靶点类型" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-tag size="small" :type="getDbTagType(row.sourceDB)">{{ row.sourceDB }}</el-tag>
+              {{ row.targetType || '—' }}
             </template>
           </el-table-column>
-          <el-table-column prop="networkCentrality" label="网络核心度" width="180" align="center" sortable="custom">
-            <template #default="{ row }">
-              <el-progress
-                :percentage="Math.round(row.networkCentrality * 100)"
-                :color="getCentralityColor(row.networkCentrality)"
-                :stroke-width="12"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column prop="species" label="物种" width="160">
+          <el-table-column prop="species" label="物种" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.species || '—' }}
             </template>
           </el-table-column>
-          <el-table-column prop="activityType" label="活性类型" width="120" align="center">
+          <el-table-column prop="sourceDB" label="来源数据库" width="120" align="center" sortable="custom">
+            <template #default="{ row }">
+              <el-tag v-if="row.sourceDB && row.sourceDB !== '—'" size="small" :type="getDbTagType(row.sourceDB)">{{ row.sourceDB }}</el-tag>
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="activityType" label="活性类型" width="100" align="center">
             <template #default="{ row }">
               {{ row.activityType || '—' }}
             </template>
           </el-table-column>
-          <el-table-column prop="asthmaRelated" label="哮喘相关" width="100" align="center">
+          <el-table-column prop="networkCentrality" label="网络核心度" width="150" align="center" sortable="custom">
+            <template #default="{ row }">
+              <el-progress
+                v-if="row.networkCentrality > 0"
+                :percentage="Math.round(row.networkCentrality * 100)"
+                :color="getCentralityColor(row.networkCentrality)"
+                :stroke-width="12"
+              />
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="asthmaRelated" label="哮喘相关" width="90" align="center" sortable="custom">
             <template #default="{ row }">
               <el-tag v-if="row.asthmaRelated" type="danger" size="small">是</el-tag>
               <el-tag v-else type="info" size="small">否</el-tag>
@@ -219,7 +227,7 @@ function toggleSpeakTargets() {
   } else {
     stopOtherSpeaking()
     const list = filteredTargets.value
-    const text = `靶点列表，共${list.length}个靶点。${list.map((t, i) => `第${i + 1}个，靶点基因${t.gene}，来源数据库${t.sourceDB}，网络核心度${t.networkCentrality}${t.asthmaRelated ? '，与哮喘相关' : ''}`).join('。')}。`
+    const text = `靶点列表，共${list.length}个靶点。${list.map((t, i) => `第${i + 1}个，靶点基因${t.gene}，靶点类型${t.targetType}，物种${t.species}${t.asthmaRelated ? '，与哮喘相关' : ''}`).join('。')}。`
     speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
     isSpeakingTargets.value = true
   }
@@ -235,19 +243,31 @@ const sortOrder = ref('')
 async function loadCompound() {
   loading.value = true
   try {
-    const compoundCid = route.query.cid
+    const compoundId = route.query.id
     const compoundName = route.query.name
 
-    if (compoundCid) {
-      const detail = await getCompoundDetail(compoundCid)
+    if (compoundId) {
+      // 先并行加载详情和靶点（快），雷达图异步后台加载
+      const [detailRes, targetsRes] = await Promise.allSettled([
+        getCompoundDetail(compoundId),
+        getCompoundTargets(compoundId)
+      ])
+
+      // 详情必须成功
+      if (detailRes.status !== 'fulfilled' || !detailRes.value) {
+        console.error('化合物详情加载失败')
+        return
+      }
+      const detail = detailRes.value
+
       compound.value = {
         name: detail.name || compoundName,
-        id: detail.pubchem_cid,
-        mw: null,
-        logp: null,
-        bloodEntryProbability: detail.blood_prob || 0,
-        smiles: '',
-        asthmaRelated: false,
+        id: detail.id,
+        mw: detail.mw,
+        logp: detail.logp,
+        bloodEntryProbability: detail.blood_entry_probability || 0,
+        smiles: detail.smiles || '',
+        asthmaRelated: detail.asthma_related || false,
         herbNames: detail.herb_names || [],
         targets: [],
         radarScores: {
@@ -257,24 +277,33 @@ async function loadCompound() {
         }
       }
 
-      // Load targets
-      const targets = await getCompoundTargets(compoundCid)
-      compound.value.targets = (targets || []).map(t => ({
-        gene: t.gene_symbol,
-        sourceDB: t.source_db,
-        networkCentrality: Math.random(),
-        species: 'Homo sapiens',
-        activityType: 'Binding',
-        asthmaRelated: t.efficacy_type != null
-      }))
-
-      // Load radar scores
-      const radar = await getCompoundRadar(compoundCid)
-      compound.value.radarScores = {
-        antiInflammatory: radar.anti_inflammatory || 0,
-        immuneRegulation: radar.immune_regulation || 0,
-        airwayRepair: radar.airway_repair || 0
+      // 靶点数据（可能失败）
+      if (targetsRes.status === 'fulfilled' && targetsRes.value) {
+        compound.value.targets = (targetsRes.value || []).map(t => ({
+          gene: t.gene,
+          targetType: t.target_type || '—',
+          species: t.species || '—',
+          sourceDB: t.source_db || '—',
+          networkCentrality: t.network_centrality || 0,
+          activityType: t.activity_type || '—',
+          activityValue: t.activity_value != null ? t.activity_value : null,
+          activityUnit: t.activity_unit || '',
+          reference: t.reference || '',
+          asthmaRelated: t.asthma_related || false
+        }))
       }
+
+      // 雷达图异步加载（不阻塞页面渲染）
+      getCompoundRadar(compoundId).then(radar => {
+        if (radar) {
+          compound.value.radarScores = {
+            antiInflammatory: radar.anti_inflammatory || 0,
+            immuneRegulation: radar.immune_regulation || 0,
+            airwayRepair: radar.airway_repair || 0
+          }
+          nextTick(() => initRadarChart())
+        }
+      }).catch(() => {})
 
       await nextTick()
       initRadarChart()

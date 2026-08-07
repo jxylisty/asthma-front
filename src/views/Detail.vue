@@ -6,10 +6,6 @@
         <el-icon><HomeFilled /></el-icon>
         <span>哮喘方剂智能分析系统</span>
       </div>
-      <el-button type="primary" class="expert-btn" @click="$router.push('/expert')">
-        <el-icon><Setting /></el-icon>
-        切换至专家/开发者模式
-      </el-button>
     </div>
 
     <!-- 主内容区 -->
@@ -19,7 +15,7 @@
         <div class="card-header">
           <h2>方剂全景特征</h2>
           <div class="header-actions">
-            <el-tag type="success" effect="dark">南京中医药大学附属医院 经验方</el-tag>
+            <el-tag v-if="prescriptionInfo?.indication_type" type="success" effect="dark">{{ prescriptionInfo.indication_type }}</el-tag>
             <el-button class="speech-btn" :class="{ speaking: isSpeakingHerbs }" size="small" @click="toggleSpeakHerbs">
               <el-icon><VideoPause v-if="isSpeakingHerbs" /><Mic v-else /></el-icon>
               {{ isSpeakingHerbs ? '停止' : '播报' }}
@@ -62,34 +58,56 @@
         <div class="card-header">
           <h2>成分入血预测战力面板</h2>
           <div class="header-actions">
-            <el-tag type="info" effect="plain">PU 学习算法预测结果</el-tag>
             <el-button class="speech-btn" :class="{ speaking: isSpeakingCompounds }" size="small" @click="toggleSpeakCompounds">
               <el-icon><VideoPause v-if="isSpeakingCompounds" /><Mic v-else /></el-icon>
               {{ isSpeakingCompounds ? '停止' : '播报' }}
             </el-button>
           </div>
         </div>
-        <div class="compound-list">
+        <div class="compound-list" v-loading="loadingCompounds">
           <div
-            v-for="(compound, index) in compounds"
+            v-for="(compound, index) in displayedCompounds"
             :key="compound.name"
             class="compound-item"
           >
             <div class="compound-header">
-              <span class="compound-rank">TOP {{ index + 1 }}</span>
+              <span class="compound-rank">TOP {{ (compoundCurrentPage - 1) * compoundPageSize + index + 1 }}</span>
               <span class="compound-name">{{ compound.name }}</span>
-              <span class="compound-prob">{{ compound.probability }}%</span>
             </div>
-            <el-progress
-              :percentage="compound.probability"
-              :stroke-width="12"
-              :color="getProgressColor(compound.probability)"
-              class="compound-progress"
+            <div class="dual-prob">
+              <div class="prob-row">
+                <span class="prob-label">ccTCM 2.0</span>
+                <el-progress
+                  :percentage="Math.round((compound.prob_cctcm || 0) * 1000) / 10"
+                  :stroke-width="12"
+                  :color="getProgressColor(compound.prob_cctcm || 0)"
+                  class="compound-progress"
+                />
+                <span class="prob-value">{{ compound.prob_cctcm ? (compound.prob_cctcm * 100).toFixed(1) + '%' : '未预测' }}</span>
+              </div>
+              <div class="prob-row">
+                <span class="prob-label">HERB 2.0</span>
+                <el-progress
+                  v-if="compound.prob_herb != null"
+                  :percentage="Math.round(compound.prob_herb * 1000) / 10"
+                  :stroke-width="12"
+                  :color="getProgressColor(compound.prob_herb)"
+                  class="compound-progress"
+                />
+                <span class="prob-value">{{ compound.prob_herb != null ? (compound.prob_herb * 100).toFixed(1) + '%' : 'HERB数据库不存在' }}</span>
+              </div>
+            </div>
+          </div>
+          <el-empty v-if="!loadingCompounds && compounds.length === 0" description="暂无入血化合物数据" />
+          <div class="pagination-wrapper" v-if="compounds.length > compoundPageSize">
+            <el-pagination
+              v-model:current-page="compoundCurrentPage"
+              :page-size="compoundPageSize"
+              :total="compounds.length"
+              layout="prev, pager, next, jumper"
+              small
+              background
             />
-            <div class="compound-desc">
-              <el-icon><InfoFilled /></el-icon>
-              {{ compound.description }}
-            </div>
           </div>
         </div>
       </div>
@@ -113,14 +131,14 @@
             </el-button>
           </div>
         </div>
-        <div ref="radarChart" class="radar-chart"></div>
+        <div ref="radarChart" class="radar-chart" v-loading="loadingRadar" element-loading-text="GSEA 富集分析中..."></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { HomeFilled, Setting, InfoFilled, QuestionFilled, Mic, VideoPause } from '@element-plus/icons-vue'
@@ -141,6 +159,21 @@ const herbs = ref([])
 const compounds = ref([])
 const radarData = ref([])
 
+// 加载状态
+const loadingCompounds = ref(false)
+const loadingRadar = ref(false)
+
+// 化合物分页（按 ccTCM 概率降序）
+const compoundPageSize = 5
+const compoundCurrentPage = ref(1)
+const sortedCompounds = computed(() => {
+  return [...compounds.value].sort((a, b) => (b.prob_cctcm || 0) - (a.prob_cctcm || 0))
+})
+const displayedCompounds = computed(() => {
+  const start = (compoundCurrentPage.value - 1) * compoundPageSize
+  return sortedCompounds.value.slice(start, start + compoundPageSize)
+})
+
 const isSpeakingHerbs = ref(false)
 const isSpeakingCompounds = ref(false)
 const isSpeakingRadar = ref(false)
@@ -160,8 +193,8 @@ async function loadDetail() {
     try {
       const { search } = await import('../api')
       const results = await search(route.query.keyword)
-      if (results && results.length > 0) {
-        id = results[0].id
+      if (results && results.prescriptions && results.prescriptions.length > 0) {
+        id = results.prescriptions[0].id
       }
     } catch (e) {
       console.error('搜索方剂失败:', e)
@@ -170,42 +203,54 @@ async function loadDetail() {
 
   if (!id) return
 
+  // Phase 1: 加载方剂详情（快），立即渲染
   try {
-    // 并行请求三个接口
-    const [detail, radar, compoundResult] = await Promise.all([
-      getPrescriptionDetail(id),
-      getPrescriptionRadar(id),
-      getPrescriptionCompounds(id, 0.5)
-    ])
-
-    // 处理方剂详情
+    const detail = await getPrescriptionDetail(id)
+    if (!detail) return
     prescriptionInfo.value = detail
     herbs.value = (detail.herbs || []).map(h => ({
       name: h.name,
-      description: h.info_desc || ''
+      description: h.functions || ''
     }))
-
-    // 处理雷达数据：归一化到 0-100
-    const radarRaw = radar || []
-    const maxCount = Math.max(...radarRaw.map(r => r.count), 1)
-    radarData.value = radarRaw.map(r => ({
-      name: r.efficacy_type,
-      value: Math.round((r.count / maxCount) * 100)
-    }))
-
-    // 处理化合物数据
-    const compoundItems = (compoundResult && compoundResult.items) ? compoundResult.items : []
-    compounds.value = compoundItems.map(c => ({
-      name: `${c.name} (来源: ${c.herb_name || '未知'})`,
-      probability: c.blood_prob ? Math.round(c.blood_prob * 100 * 10) / 10 : 0,
-      description: `ccTCM概率: ${c.prob_cctcm ? (c.prob_cctcm * 100).toFixed(1) + '%' : '无'} | HERB概率: ${c.prob_herb ? (c.prob_herb * 100).toFixed(1) + '%' : '无'}`
-    }))
-
-    // 数据加载完毕后初始化雷达图
-    initRadarChart()
   } catch (e) {
-    console.error('加载方剂详情失败:', e)
+    console.error('方剂详情加载失败:', e)
+    return
   }
+
+  // Phase 2: 异步加载化合物（不阻塞页面）
+  loadingCompounds.value = true
+  getPrescriptionCompounds(id, 0.5).then(res => {
+    if (res) {
+      const compoundItems = res.items || []
+      compounds.value = compoundItems.map(c => ({
+        name: `${c.name} (来源: ${c.herb_name || '未知'})`,
+        prob_cctcm: c.prob_cctcm,
+        prob_herb: c.prob_herb
+      }))
+      compoundCurrentPage.value = 1
+    }
+  }).catch(e => {
+    console.error('化合物加载失败:', e)
+  }).finally(() => {
+    loadingCompounds.value = false
+  })
+
+  // Phase 3: 异步加载雷达图（GSEA 慢，最后加载）
+  loadingRadar.value = true
+  getPrescriptionRadar(id).then(radarRaw => {
+    if (radarRaw && radarRaw.length > 0) {
+      const maxCount = Math.max(...radarRaw.map(r => r.count), 1)
+      radarData.value = radarRaw.map(r => ({
+        name: r.efficacy_type,
+        value: Math.round((r.count / maxCount) * 100)
+      }))
+      nextTick(() => initRadarChart())
+    }
+  }).catch(e => {
+    console.error('雷达图加载失败:', e)
+  }).finally(() => {
+    loadingRadar.value = false
+  })
 }
 
 function toggleSpeakHerbs() {
@@ -231,7 +276,7 @@ function toggleSpeakCompounds() {
     isSpeakingCompounds.value = false
   } else {
     stopOtherSpeaking()
-    const text = `成分入血预测战力面板。${compounds.value.map((c, i) => `第${i + 1}位，${c.name}，预测概率${c.probability}%，${c.description}`).join('。')}`
+    const text = `成分入血预测战力面板。${displayedCompounds.value.map((c, i) => `第${i + 1}位，${c.name}，ccTCM预测概率${c.prob_cctcm ? (c.prob_cctcm * 100).toFixed(1) + '%' : '未预测'}，HERB预测概率${c.prob_herb != null ? (c.prob_herb * 100).toFixed(1) + '%' : '不存在'}`).join('。')}`
     speak(text, { voice: speechVoice.value, rate: speechRate.value, pitch: speechPitch.value })
     isSpeakingCompounds.value = true
   }
@@ -532,6 +577,12 @@ onMounted(() => {
   gap: 20px;
 }
 
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
 .compound-item {
   padding: 16px;
   background: #f9fafc;
@@ -572,8 +623,39 @@ onMounted(() => {
   color: #409eff;
 }
 
-.compound-progress {
-  margin-bottom: 10px;
+.dual-prob {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.prob-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prob-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  white-space: nowrap;
+  width: 70px;
+}
+
+.prob-row .compound-progress {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.prob-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #409eff;
+  white-space: nowrap;
+  width: 110px;
+  text-align: right;
 }
 
 .compound-desc {

@@ -16,21 +16,11 @@
           <el-icon><Search /></el-icon>
         </template>
       </el-input>
-
-      <el-select
-        v-model="categoryFilter"
-        placeholder="按类别筛选"
-        class="category-select"
-      >
-        <el-option label="全部" value="" />
-        <el-option label="与哮喘相关" value="asthma" />
-        <el-option label="其他" value="other" />
-      </el-select>
     </div>
 
     <div v-loading="loading" class="compound-grid">
       <el-card
-        v-for="item in paginatedCompounds"
+        v-for="item in compounds"
         :key="item.id"
         class="compound-card"
         @click="handleCardClick(item)"
@@ -55,12 +45,12 @@
         <div class="card-body">
           <div class="info-row">
             <span class="label">分子量 (MW)：</span>
-            <span class="value">{{ item.mw }}</span>
+            <span class="value">{{ item.mw || '—' }}</span>
           </div>
 
           <div class="info-row">
             <span class="label">LogP：</span>
-            <span class="value">{{ item.logp }}</span>
+            <span class="value">{{ item.logp || '—' }}</span>
           </div>
 
           <div class="info-row">
@@ -88,7 +78,7 @@
       </el-card>
     </div>
 
-    <div class="pagination-wrapper" v-if="filteredCompounds.length > pageSize">
+    <div class="pagination-wrapper" v-if="totalCompounds > pageSize">
       <el-pagination
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -104,12 +94,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, DataLine, Mic, VideoPause } from '@element-plus/icons-vue'
 import { useSpeech } from '../composables/useSpeech'
 import { useSettings } from '../composables/useSettings'
-import { getHighPotentialCompounds } from '../api'
+import { getCompounds } from '../api'
 
 const router = useRouter()
 const { speak, stop } = useSpeech()
@@ -138,7 +128,6 @@ function toggleSpeech(item) {
 
 const loading = ref(false)
 const searchQuery = ref('')
-const categoryFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(12)
 
@@ -148,15 +137,15 @@ const totalCompounds = ref(0)
 async function loadCompounds() {
   loading.value = true
   try {
-    const data = await getHighPotentialCompounds(currentPage.value, pageSize.value)
+    const data = await getCompounds(currentPage.value, pageSize.value, searchQuery.value)
     compounds.value = (data.items || []).map(item => ({
-      id: item.pubchem_cid,
+      id: item.id,
       name: item.name,
       mw: item.mw,
       logp: item.logp,
-      bloodEntryProbability: item.blood_prob,
-      targetCount: 0,
-      asthmaRelated: false
+      bloodEntryProbability: item.blood_entry_probability,
+      targetCount: item.target_count || 0,
+      asthmaRelated: item.asthma_related || false
     }))
     totalCompounds.value = data.total || 0
   } catch (e) {
@@ -166,33 +155,18 @@ async function loadCompounds() {
   }
 }
 
+// 搜索防抖
+let searchTimer = null
+watch(searchQuery, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadCompounds()
+  }, 300)
+})
+
 onMounted(() => {
   loadCompounds()
-})
-
-const filteredCompounds = computed(() => {
-  let result = compounds.value
-
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(item =>
-      item.name.toLowerCase().includes(query)
-    )
-  }
-
-  if (categoryFilter.value === 'asthma') {
-    result = result.filter(item => item.asthmaRelated)
-  } else if (categoryFilter.value === 'other') {
-    result = result.filter(item => !item.asthmaRelated)
-  }
-
-  return result
-})
-
-const paginatedCompounds = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredCompounds.value.slice(start, end)
 })
 
 function getProbabilityColor(prob) {
@@ -204,7 +178,7 @@ function getProbabilityColor(prob) {
 function handleCardClick(item) {
   router.push({
     path: '/compounds/detail',
-    query: { cid: item.id, name: item.name }
+    query: { id: item.id, name: item.name }
   })
 }
 

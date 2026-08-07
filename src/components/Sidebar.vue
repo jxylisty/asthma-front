@@ -31,15 +31,6 @@
         <span>方剂列表</span>
       </el-menu-item>
 
-      <el-sub-menu index="/detail">
-        <template #title>
-          <el-icon><Document /></el-icon>
-          <span>详情分析</span>
-        </template>
-        <el-menu-item index="/detail">方剂详情</el-menu-item>
-        <el-menu-item index="/expert">专家模式</el-menu-item>
-      </el-sub-menu>
-
       <el-sub-menu index="/herbs">
         <template #title>
           <el-icon><FirstAidKit /></el-icon>
@@ -48,11 +39,6 @@
         <el-menu-item index="/herbs">中药详情</el-menu-item>
         <el-menu-item index="/compounds">化合物详情</el-menu-item>
       </el-sub-menu>
-
-      <el-menu-item index="/node-editor">
-        <el-icon><Connection /></el-icon>
-        <span>节点编排</span>
-      </el-menu-item>
 
       <el-menu-item index="/settings">
         <el-icon><Setting /></el-icon>

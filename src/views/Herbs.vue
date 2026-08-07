@@ -98,7 +98,7 @@
       </el-card>
     </div>
 
-    <div class="pagination-wrapper" v-if="filteredHerbs.length > pageSize">
+    <div class="pagination-wrapper" v-if="totalHerbs > 0">
       <el-pagination
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -114,7 +114,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, View, Mic, VideoPause } from '@element-plus/icons-vue'
 import { useSpeech } from '../composables/useSpeech'
@@ -158,18 +158,19 @@ const totalHerbs = ref(0)
 async function loadHerbs() {
   loading.value = true
   try {
-    const data = await getHerbs(currentPage.value, pageSize.value)
+    const data = await getHerbs(currentPage.value, pageSize.value, searchQuery.value)
     herbs.value = (data.items || []).map(item => ({
       id: item.id,
       name: item.name,
-      category: '中药',
-      nature: '',
-      flavor: '',
-      meridians: '',
-      family: '',
-      functions: item.info_desc,
-      compoundCount: 0,
-      asthmaRelated: false
+      pinyin: item.pinyin || '',
+      category: item.category || '',
+      nature: item.nature || '',
+      flavor: item.flavor || '',
+      meridians: item.meridians || '',
+      family: item.family || '',
+      functions: item.functions || '',
+      compoundCount: item.compound_count || 0,
+      asthmaRelated: item.asthma_related || false
     }))
     totalHerbs.value = data.total || 0
   } catch (e) {
@@ -183,18 +184,18 @@ onMounted(() => {
   loadHerbs()
 })
 
+// 搜索/筛选变化时重新加载
+let searchTimer = null
+watch([searchQuery, categoryFilter], () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadHerbs()
+  }, 300)
+})
+
 const filteredHerbs = computed(() => {
   let result = herbs.value
-
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(item =>
-      item.name.toLowerCase().includes(query) ||
-      (item.pinyin && item.pinyin.toLowerCase().includes(query)) ||
-      (item.family && item.family.toLowerCase().includes(query)) ||
-      (item.functions && item.functions.toLowerCase().includes(query))
-    )
-  }
 
   if (categoryFilter.value === 'asthma') {
     result = result.filter(item => item.asthmaRelated)
@@ -206,9 +207,7 @@ const filteredHerbs = computed(() => {
 })
 
 const paginatedHerbs = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredHerbs.value.slice(start, end)
+  return filteredHerbs.value
 })
 
 function handleCardClick(item) {
